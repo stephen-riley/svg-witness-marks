@@ -1,0 +1,345 @@
+<html>
+
+<head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <style>
+        svg {
+            border: 1px solid black;
+            padding-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+    </div>
+    <div id="extracts">
+    </div>
+</body>
+
+<script lang="javascript">
+
+    var cached;
+    var orig_width;
+    var orig_height;
+
+    $(document).ready(function (e) {
+        load_svg();
+        $('#svg1').attr('width', '15in');
+        orig_width = $('#svg1').attr('width');
+        orig_height = $('#svg1').attr('height');
+        const groups = map_it();
+        add_new_groups(groups);
+        make_witness_marks(groups);
+        dump_extract_bboxes(groups);
+        make_extracts(groups);
+        $('svg').on('click', function (e) {
+            const svg = $(this);
+            save_svg(svg.attr('id'));
+        });
+    });
+
+    function dump_extract_bboxes(groups) {
+        for (const g of groups) {
+            var box = getMyBBox($(`#parent-${g.id}`)[0]);
+            g.full_box = box;
+            console.log(`${g.id} box: ${box.x},${box.y} ${box.x + box.width},${box.y + box.height}`);
+        }
+    }
+
+    function load_svg() {
+        xhr = new XMLHttpRequest();
+        xhr.open("GET", "if-then-else.svg", false);
+        // Following line is just to be on the safe side;
+        // not needed if your server delivers SVG with correct MIME type
+        xhr.overrideMimeType("image/svg+xml");
+        xhr.onload = function (e) {
+            // You might also want to check for xhr.readyState/xhr.status here
+            document.getElementById("container")
+                .appendChild(xhr.responseXML.documentElement);
+        };
+        xhr.send("");
+    }
+
+    function map_it() {
+        const groups = $('#layer1').children().toArray();
+        var ordered = $.map(groups, function (g, i) {
+            const jqg = $(g);
+            const box = getMyBBox(g);
+            const id = g.getAttribute('id');
+            const color = get_color(jqg);
+
+            make_box(box.x, box.y, box.width, box.height, color, `${id}-box`);
+
+            return {
+                id: id,
+                box: box,
+                top: Math.trunc(box.y),
+                bottom: Math.trunc(box.y + box.height),
+                left: Math.trunc(box.x),
+                right: Math.trunc(box.x + box.width),
+                jq: jqg,
+                color: color,
+            };
+        });
+
+        ordered.sort((a, b) => a.top - b.top);
+        console.log(ordered);
+        cached = ordered;
+        return ordered;
+    }
+
+    function add_new_groups(groups) {
+        for (const g of groups) {
+            const new_group = $(document.createElementNS('http://www.w3.org/2000/svg', "g"))
+                .attr('id', `parent-${g.id}`);
+            $('#layer1').append(new_group);
+
+            const original_group = $(`#${g.id}`).detach();
+            $(`#parent-${g.id}`).append(original_group);
+        }
+    }
+
+    function get_color(g) {
+        var notGroups = g.children().not('g');
+        for (const el of notGroups) {
+            const fill = $(el).css('fill');
+            if (fill != undefined && fill !== "rgb(0, 0, 0)") {
+                return fill;
+            }
+        }
+
+        var groups = g.children('g');
+        for (const el of groups) {
+            const res = get_color($(el));
+            if (res != undefined) {
+                return res;
+            }
+        }
+
+        return undefined;
+    }
+
+    function get_color_old(g) {
+        const fills = g.filter(function (index) {
+            const fill = g.css('fill');
+            return fill != undefined && fill !== "rgb(0, 0, 0)";
+        });
+
+        return fills.css('fill');
+    }
+
+    function min_x(groups) {
+        return Math.min(...(groups.map(g => g.left)));
+    }
+
+    function max_x(groups) {
+        return Math.max(...(groups.map(g => g.right)));
+    }
+
+    function make_witness_marks(groups) {
+        const min = Math.trunc(min_x(groups));
+        const max = Math.trunc(max_x(groups));
+
+        for (let i = 0; i < groups.length - 1; i++) {
+            const y = (groups[i].bottom + groups[i + 1].top) / 2;
+            const c1 = groups[i].color;
+            const c2 = groups[i + 1].color;
+            make_mark(min - 20, y, c1, `w${i}-${i + 1}-l`, groups[i].id);
+            make_mark(min - 20, y, c2, `w${i}-${i + 1}-l`, groups[i + 1].id);
+            make_mark(max + 20, y, c2, `w${i}-${i + 1}-r`, groups[i + 1].id);
+            make_mark(max + 20, y, c1, `w${i}-${i + 1}-r`, groups[i].id);
+        }
+    }
+
+    function make_mark_old(x, y, color, id, parent) {
+        const r = 5;
+        const path = `M0,-${2 * r} V${2 * r} M-${2 * r},0 H${2 * r}`;
+
+        const newpath = $(document.createElementNS('http://www.w3.org/2000/svg', "path"))
+            .attr('id', id)
+            .attr('d', path)
+            .attr('stroke', color)
+            .attr('stroke-width', 10)
+            .attr('opacity', 1)
+            .attr('fill', color)
+            .attr('transform', `translate(${x}, ${y})`);
+        $(`#parent-${parent}`).append(newpath);
+    }
+
+    function make_mark(x, y, color, id, parent) {
+        const r = 5;
+        const width = 2;
+        const path = `M0,-${2 * r} V${2 * r} M-${2 * r},0 H${2 * r}`;
+
+        const mark = $(document.createElementNS('http://www.w3.org/2000/svg', "g"))
+            .attr('transform', `translate(${x}, ${y})`)
+            .append(make_filled_rect(0, 0, 2 * r, width, color).attr('transform', `translate(${-r}, ${-width / 2})`))
+            .append(make_filled_rect(0, 0, width, 2 * r, color).attr('transform', `translate(${-width / 2}, ${-r})`));
+
+        $(`#parent-${parent}`).append(mark);
+    }
+
+    function make_filled_rect(x, y, w, h, color, id) {
+        const rect = $(document.createElementNS('http://www.w3.org/2000/svg', "rect"))
+            .attr('id', id)
+            .attr('x', x)
+            .attr('y', y)
+            .attr('width', w)
+            .attr('height', h)
+            .attr('stroke', color)
+            .attr('stroke-width', 2)
+            .attr('opacity', 1)
+            .attr('fill', color);
+
+        return rect;
+    }
+
+    function make_box(x, y, w, h, color, id) {
+        const r = 5;
+        const path = `M0,-${2 * r} V${2 * r} M-${2 * r},0 H${2 * r}`;
+
+        const newpath = $(document.createElementNS('http://www.w3.org/2000/svg', "rect"))
+            .attr('id', id)
+            .attr('x', x)
+            .attr('y', y)
+            .attr('width', w)
+            .attr('height', h)
+            .attr('stroke', color)
+            .attr('stroke-width', 2)
+            .attr('opacity', 1)
+            .attr('fill', 'none');
+        // $('#layer1').append(newpath);
+    }
+
+    function save_svg(id) {
+        var svgData = $(`#${id}`)[0].outerHTML;
+        var svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+        var svgUrl = URL.createObjectURL(svgBlob);
+        var downloadLink = document.createElement("a");
+        downloadLink.href = svgUrl;
+        downloadLink.download = `${id}.svg`;
+        downloadLink.click();
+    }
+
+    function make_extracts(groups) {
+        for (const g of groups) {
+            const extract_group = $(`<div id="extract-${g.id}"></div>`);
+            $('#extracts').append(extract_group);
+            const svg = make_new_svg(`svg-${g.id}`);
+            svg.find('#layer1').append($(`#parent-${g.id}`).clone());
+            svg.find('#layer1').attr('transform', `translate(${-g.full_box.x}, -${g.full_box.y})`);
+            extract_group.append(svg);
+            svg.attr('width', `${g.full_box.width}mm`);
+            svg.attr('height', `${g.full_box.height}mm`);
+            svg.attr('viewBox', `0 0 ${Math.trunc(g.full_box.width)} ${Math.trunc(g.full_box.height)}`);
+            // fitSvgToContent(svg[0]);
+        }
+    }
+
+    function make_new_svg(id) {
+        var new_svg = $('#svg1').clone().attr('id', id);
+        var new_layer1 = new_svg.find('#layer1');
+        new_layer1.empty();
+        return new_svg;
+    }
+
+    /**
+     * @param {SVGElement} element - Element to get the bounding box for
+     * @param {boolean} [withoutTransforms=false] - If true, transforms will not be calculated
+     * @param {SVGElement} [toElement] - Element to calculate bounding box relative to
+     * @returns {SVGRect} Coordinates and dimensions of the real bounding box
+     */
+    function getMyBBox(element, withoutTransforms, toElement) {
+
+        var svg = element.ownerSVGElement;
+
+        if (!svg) {
+            return { x: 0, y: 0, cx: 0, cy: 0, width: 0, height: 0 };
+        }
+
+        var r = element.getBBox();
+
+        if (withoutTransforms) {
+            return {
+                x: r.x,
+                y: r.y,
+                width: r.width,
+                height: r.height,
+                cx: r.x + r.width / 2,
+                cy: r.y + r.height / 2
+            };
+        }
+
+        var p = svg.createSVGPoint();
+
+        var matrix = (toElement || svg).getScreenCTM().inverse().multiply(element.getScreenCTM());
+
+        p.x = r.x;
+        p.y = r.y;
+        var a = p.matrixTransform(matrix);
+
+        p.x = r.x + r.width;
+        p.y = r.y;
+        var b = p.matrixTransform(matrix);
+
+        p.x = r.x + r.width;
+        p.y = r.y + r.height;
+        var c = p.matrixTransform(matrix);
+
+        p.x = r.x;
+        p.y = r.y + r.height;
+        var d = p.matrixTransform(matrix);
+
+        var minX = Math.min(a.x, b.x, c.x, d.x);
+        var maxX = Math.max(a.x, b.x, c.x, d.x);
+        var minY = Math.min(a.y, b.y, c.y, d.y);
+        var maxY = Math.max(a.y, b.y, c.y, d.y);
+
+        var width = maxX - minX;
+        var height = maxY - minY;
+
+        return {
+            x: Math.trunc(minX),
+            y: Math.trunc(minY),
+            width: Math.trunc(width),
+            height: Math.trunc(height),
+            cx: Math.trunc(minX + width / 2),
+            cy: Math.trunc(minY + height / 2)
+        };
+    }
+
+    function fitSvgToContent(svgElement) {
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        const children = svgElement.children;
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i];
+            if (typeof child.getBBox === 'function') {
+                const bbox = child.getBBox();
+                minX = Math.min(minX, bbox.x);
+                minY = Math.min(minY, bbox.y);
+                maxX = Math.max(maxX, bbox.x + bbox.width);
+                maxY = Math.max(maxY, bbox.y + bbox.height);
+            }
+        }
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        // Add a small padding if desired
+        const padding = 5;
+        const finalMinX = minX - padding;
+        const finalMinY = minY - padding;
+        const finalWidth = width + (2 * padding);
+        const finalHeight = height + (2 * padding);
+
+        svgElement.setAttribute('viewBox', `${finalMinX} ${finalMinY} ${finalWidth} ${finalHeight}`);
+    }
+
+</script>
+
+</html>
