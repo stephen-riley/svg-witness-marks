@@ -1,6 +1,7 @@
 <html>
 
 <head>
+    <script type="text/javascript" src="ntc.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
     <style>
         svg {
@@ -22,6 +23,8 @@
     var cached;
     var orig_width;
     var orig_height;
+    const svg_file = "if-then-else.svg";
+    var svg_file_prefix = svg_file.replace(".svg", "");
 
     $(document).ready(function (e) {
         load_svg();
@@ -49,7 +52,7 @@
 
     function load_svg() {
         xhr = new XMLHttpRequest();
-        xhr.open("GET", "if-then-else.svg", false);
+        xhr.open("GET", svg_file, false);
         // Following line is just to be on the safe side;
         // not needed if your server delivers SVG with correct MIME type
         xhr.overrideMimeType("image/svg+xml");
@@ -217,9 +220,17 @@
         var svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
         var svgUrl = URL.createObjectURL(svgBlob);
         var downloadLink = document.createElement("a");
+        var color_string = get_color($(`#${id}`));
+        var color_hex = rgbToHex(color_string);
+        var color_name = ntc.name(color_hex);
+
+        const download_filename = `${svg_file_prefix}-${id.replace('svg-', '')}-${color_name[1].toLowerCase().replace(' ', '_')}.svg`
+
         downloadLink.href = svgUrl;
-        downloadLink.download = `${id}.svg`;
+        downloadLink.download = download_filename;
         downloadLink.click();
+        // document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(svgUrl);
     }
 
     function make_extracts(groups) {
@@ -338,6 +349,27 @@
         const finalHeight = height + (2 * padding);
 
         svgElement.setAttribute('viewBox', `${finalMinX} ${finalMinY} ${finalWidth} ${finalHeight}`);
+    }
+
+    function rgbToHex(rgbString) {
+        // Extract the R, G, B values from the string
+        const parts = rgbString.substring(4, rgbString.length - 1).split(',');
+        let r = parseInt(parts[0].trim());
+        let g = parseInt(parts[1].trim());
+        let b = parseInt(parts[2].trim());
+
+        // Convert each component to a two-digit hexadecimal string
+        function componentToHex(c) {
+            const hex = c.toString(16);
+            return hex.length === 1 ? "0" + hex : hex;
+        }
+
+        const hexR = componentToHex(r);
+        const hexG = componentToHex(g);
+        const hexB = componentToHex(b);
+
+        // Combine the hexadecimal components with a '#' prefix
+        return `#${hexR}${hexG}${hexB}`;
     }
 
 </script>
